@@ -1,0 +1,47 @@
+diff -bur netkit-telnet-ssl-0.17.24+0.1.orig~/telnet/Makefile netkit-telnet-ssl-0.17.24+0.1.orig/telnet/Makefile
+--- netkit-telnet-ssl-0.17.24+0.1.orig~/telnet/Makefile	2006-04-28 08:33:30.000000000 +0200
++++ netkit-telnet-ssl-0.17.24+0.1.orig/telnet/Makefile	2006-04-28 08:34:03.000000000 +0200
+@@ -25,8 +25,8 @@
+ 	$(CXX) $(CXXFLAGS) -MM $(SRCS) >depend.mk
+ 
+ install: telnet
+-	install -m$(BINMODE) telnet $(INSTALLROOT)$(BINDIR)/telnet-ssl
+-	install -m$(MANMODE) telnet.1 $(INSTALLROOT)$(MANDIR)/man1/telnet-ssl.1
++	install telnet $(INSTALLROOT)$(BINDIR)/telnet-ssl
++	install telnet.1 $(INSTALLROOT)$(MANDIR)/man1/telnet-ssl.1
+ 
+ clean:
+ 	rm -f *.o telnet
+Tylko w netkit-telnet-ssl-0.17.24+0.1.orig/telnet: Makefile~
+diff -bur netkit-telnet-ssl-0.17.24+0.1.orig~/telnetd/Makefile netkit-telnet-ssl-0.17.24+0.1.orig/telnetd/Makefile
+--- netkit-telnet-ssl-0.17.24+0.1.orig~/telnetd/Makefile	2006-04-28 08:33:30.000000000 +0200
++++ netkit-telnet-ssl-0.17.24+0.1.orig/telnetd/Makefile	2006-04-28 08:34:22.000000000 +0200
+@@ -30,9 +30,9 @@
+ telnetd.o: ../version.h
+ 
+ install: telnetd
+-	install -m$(DAEMONMODE) telnetd $(INSTALLROOT)$(SBINDIR)/in.telnetd
+-	install -m$(MANMODE) issue.net.5 $(INSTALLROOT)$(MANDIR)/man5/
+-	install -m$(MANMODE) telnetd.8 $(INSTALLROOT)$(MANDIR)/man8/in.telnetd.8
++	install telnetd $(INSTALLROOT)$(SBINDIR)/in.telnetd
++	install issue.net.5 $(INSTALLROOT)$(MANDIR)/man5/
++	install telnetd.8 $(INSTALLROOT)$(MANDIR)/man8/in.telnetd.8
+ 	ln -sf in.telnetd.8 $(INSTALLROOT)$(MANDIR)/man8/telnetd.8
+ 
+ clean:
+Tylko w netkit-telnet-ssl-0.17.24+0.1.orig/telnetd: Makefile~
+diff -bur netkit-telnet-ssl-0.17.24+0.1.orig~/telnetlogin/Makefile netkit-telnet-ssl-0.17.24+0.1.orig/telnetlogin/Makefile
+--- netkit-telnet-ssl-0.17.24+0.1.orig~/telnetlogin/Makefile	2006-04-28 08:33:30.000000000 +0200
++++ netkit-telnet-ssl-0.17.24+0.1.orig/telnetlogin/Makefile	2006-04-28 08:35:16.000000000 +0200
+@@ -11,8 +11,8 @@
+ $(OBJS): ../version.h
+ 
+ install: telnetlogin
+-	install -s -m4750 -oroot -gtelnetd telnetlogin $(INSTALLROOT)$(SBINDIR)
+-	install -m$(MANMODE) telnetlogin.8 $(INSTALLROOT)$(MANDIR)/man8
++	install telnetlogin $(INSTALLROOT)$(SBINDIR)
++	install telnetlogin.8 $(INSTALLROOT)$(MANDIR)/man8
+ 
+ clean:
+ 	rm -f *.o telnetlogin
+Tylko w netkit-telnet-ssl-0.17.24+0.1.orig/telnetlogin: Makefile~
