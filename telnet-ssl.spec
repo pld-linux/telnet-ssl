@@ -19,6 +19,7 @@ Patch1:		%{name}-install.patch
 # better url?
 URL:		http://packages.debian.org/telnet-ssl
 BuildRequires:	openssl-devel
+BuildRequires:	rpmbuild(macros) >= 1.268
 BuildRoot:	%{tmpdir}/%{name}-%{version}-root-%(id -u -n)
 
 %description
@@ -132,7 +133,7 @@ rm -rf $RPM_BUILD_ROOT
 
 %postun -n telnetd-ssl
 if [ "$1" = "0" ]; then
-        %service -q rc-inetd reload
+	%service -q rc-inetd reload
 fi
 
 %files
