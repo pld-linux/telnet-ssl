@@ -41,7 +41,7 @@ Polecenie telnet jest wykorzystywane do interaktywnej komunikacji z
 innym komputerem przy u¿yciu protoko³u TELNET.
 
 Telnet(d)-SSL zastêpuje telnet(d) dostarczaj±c wersjê rozszerzon± o
-mo¿liwo¶æ autentykacji i szyfrowania SSL. Telnet(d)-SSL w pe³ni
+mo¿liwo¶æ uwierzytelniania i szyfrowania SSL. Telnet(d)-SSL w pe³ni
 wspó³pracuje ze standardowym telnet(d) - sprawdza czy aplikacja po
 drugiej stronie wspiera SSL, je¶li nie prze³±cza siê do standardowego
 protoko³u TELNET.
@@ -83,7 +83,7 @@ Polecenie telnet jest wykorzystywane do interaktywnej komunikacji z
 innym komputerem przy u¿yciu protoko³u TELNET.
 
 Telnet(d)-SSL zastêpuje telnet(d) dostarczaj±c wersjê rozszerzon± o
-mo¿liwo¶æ autentykacji i szyfrowania SSL. Telnet(d)-SSL w pe³ni
+mo¿liwo¶æ uwierzytelniania i szyfrowania SSL. Telnet(d)-SSL w pe³ni
 wspó³pracuje ze standardowym telnet(d) - sprawdza czy aplikacja po
 drugiej stronie wspiera SSL, je¶li nie prze³±cza siê do standardowego
 protoko³u TELNET.
