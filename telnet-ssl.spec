@@ -4,7 +4,7 @@
 #   - fix (or maybe not?) path to SSL certs
 #   - provide inetd entry for both telnet and telnets ?
 Summary:	Client for the telnet remote login protocol with support for SSL
-Summary(pl):	Klient protoko³u telnet ze wsparciem dla SSL
+Summary(pl.UTF-8):   Klient protokoÅ‚u telnet ze wsparciem dla SSL
 Name:		telnet-ssl
 Version:	0.17.24
 Release:	0.1
@@ -36,25 +36,25 @@ will not go in cleartext over the line. Nobody can get it with tcpdump
 or similar tools. With SSLtelnet you can also connect to https-server
 like https://www.netscape.com.
 
-%description -l pl
+%description -l pl.UTF-8
 Polecenie telnet jest wykorzystywane do interaktywnej komunikacji z
-innym komputerem przy u¿yciu protoko³u TELNET.
+innym komputerem przy uÅ¼yciu protokoÅ‚u TELNET.
 
-Telnet(d)-SSL zastêpuje telnet(d) dostarczaj±c wersjê rozszerzon± o
-mo¿liwo¶æ uwierzytelniania i szyfrowania SSL. Telnet(d)-SSL w pe³ni
-wspó³pracuje ze standardowym telnet(d) - sprawdza czy aplikacja po
-drugiej stronie wspiera SSL, je¶li nie prze³±cza siê do standardowego
-protoko³u TELNET.
+Telnet(d)-SSL zastÄ™puje telnet(d) dostarczajÄ…c wersjÄ™ rozszerzonÄ… o
+moÅ¼liwoÅ›Ä‡ uwierzytelniania i szyfrowania SSL. Telnet(d)-SSL w peÅ‚ni
+wspÃ³Å‚pracuje ze standardowym telnet(d) - sprawdza czy aplikacja po
+drugiej stronie wspiera SSL, jeÅ›li nie przeÅ‚Ä…cza siÄ™ do standardowego
+protokoÅ‚u TELNET.
 
-Korzy¶ci wzglêdem klasycznego telnet(d): has³a i dane nie bêd± wys³ane
-czystym tekstem. Nikt nie bêdzie móg³ ich zobaczyæ korzystaj±c z
-aplikacji takich jak tcpdump. Przy u¿yciu telnet-ssl mo¿liwe jest
-tak¿e po³±czenie siê z serwerem www (n.p. https://www.netscape.com)
-przy u¿yciu SSL.
+KorzyÅ›ci wzglÄ™dem klasycznego telnet(d): hasÅ‚a i dane nie bÄ™dÄ… wysÅ‚ane
+czystym tekstem. Nikt nie bÄ™dzie mÃ³gÅ‚ ich zobaczyÄ‡ korzystajÄ…c z
+aplikacji takich jak tcpdump. Przy uÅ¼yciu telnet-ssl moÅ¼liwe jest
+takÅ¼e poÅ‚Ä…czenie siÄ™ z serwerem www (n.p. https://www.netscape.com)
+przy uÅ¼yciu SSL.
 
 %package -n telnetd-ssl
 Summary:	Server for the telnet-ssl remote login protocol
-Summary(pl):	Serwer us³ugi telnet-ssl
+Summary(pl.UTF-8):   Serwer usÅ‚ugi telnet-ssl
 Group:		Networking
 Requires:	inetdaemon
 Requires:	login
@@ -78,21 +78,21 @@ like https://www.netscape.com. Just do 'telnet www.netscape.com 443'.
 
 This package provides server for the telnet-ssl.
 
-%description -n telnetd-ssl -l pl
+%description -n telnetd-ssl -l pl.UTF-8
 Polecenie telnet jest wykorzystywane do interaktywnej komunikacji z
-innym komputerem przy u¿yciu protoko³u TELNET.
+innym komputerem przy uÅ¼yciu protokoÅ‚u TELNET.
 
-Telnet(d)-SSL zastêpuje telnet(d) dostarczaj±c wersjê rozszerzon± o
-mo¿liwo¶æ uwierzytelniania i szyfrowania SSL. Telnet(d)-SSL w pe³ni
-wspó³pracuje ze standardowym telnet(d) - sprawdza czy aplikacja po
-drugiej stronie wspiera SSL, je¶li nie prze³±cza siê do standardowego
-protoko³u TELNET.
+Telnet(d)-SSL zastÄ™puje telnet(d) dostarczajÄ…c wersjÄ™ rozszerzonÄ… o
+moÅ¼liwoÅ›Ä‡ uwierzytelniania i szyfrowania SSL. Telnet(d)-SSL w peÅ‚ni
+wspÃ³Å‚pracuje ze standardowym telnet(d) - sprawdza czy aplikacja po
+drugiej stronie wspiera SSL, jeÅ›li nie przeÅ‚Ä…cza siÄ™ do standardowego
+protokoÅ‚u TELNET.
 
-Korzy¶ci wzglêdem klasycznego telnet(d): has³a i dane nie bêd± wys³ane
-czystym tekstem. Nikt nie bêdzie móg³ ich zobaczyæ korzystaj±c z
-aplikacji takich jak tcpdump. Przy u¿yciu telnet-ssl mo¿liwe jest
-tak¿e po³±czenie siê z serwerem www (n.p. https://www.netscape.com)
-przy u¿yciu SSL.
+KorzyÅ›ci wzglÄ™dem klasycznego telnet(d): hasÅ‚a i dane nie bÄ™dÄ… wysÅ‚ane
+czystym tekstem. Nikt nie bÄ™dzie mÃ³gÅ‚ ich zobaczyÄ‡ korzystajÄ…c z
+aplikacji takich jak tcpdump. Przy uÅ¼yciu telnet-ssl moÅ¼liwe jest
+takÅ¼e poÅ‚Ä…czenie siÄ™ z serwerem www (n.p. https://www.netscape.com)
+przy uÅ¼yciu SSL.
 
 Ten pakiet dostarcza serwer telnet-ssl.
 
