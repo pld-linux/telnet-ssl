@@ -4,7 +4,7 @@
 #   - fix (or maybe not?) path to SSL certs
 #   - provide inetd entry for both telnet and telnets ?
 Summary:	Client for the telnet remote login protocol with support for SSL
-Summary(pl.UTF-8):   Klient protokołu telnet ze wsparciem dla SSL
+Summary(pl.UTF-8):	Klient protokołu telnet ze wsparciem dla SSL
 Name:		telnet-ssl
 Version:	0.17.24
 Release:	0.1
@@ -54,7 +54,7 @@ przy użyciu SSL.
 
 %package -n telnetd-ssl
 Summary:	Server for the telnet-ssl remote login protocol
-Summary(pl.UTF-8):   Serwer usługi telnet-ssl
+Summary(pl.UTF-8):	Serwer usługi telnet-ssl
 Group:		Networking
 Requires:	inetdaemon
 Requires:	login
