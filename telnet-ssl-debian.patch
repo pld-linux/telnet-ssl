@@ -9,9 +9,37 @@
  
  %.build:
  	(cd $(patsubst %.build, %, $@) && $(MAKE))
+--- netkit-telnet-ssl-0.17.24+0.1.orig/.gitignore
++++ netkit-telnet-ssl-0.17.24+0.1/.gitignore
+@@ -0,0 +1,19 @@
++*~
++*.o
++MCONFIG
++telnet/telnet
++telnetd/telnetd
++telnetlogin/telnetlogin
++libtelnet/libtelnet.a
++debian/files
++debian/telnet-ssl.postinst.debhelper
++debian/telnet-ssl.postrm.debhelper
++debian/telnet-ssl.substvars
++debian/telnet-ssl
++debian/telnetd-ssl.dirs
++debian/telnetd-ssl.postinst
++debian/telnetd-ssl.postrm
++debian/telnetd-ssl.prerm
++debian/telnetd-ssl.substvars
++debian/telnetd-ssl
++debian/*.debhelper.log
 --- netkit-telnet-ssl-0.17.24+0.1.orig/telnet/Makefile
 +++ netkit-telnet-ssl-0.17.24+0.1/telnet/Makefile
-@@ -6,15 +6,18 @@
+@@ -3,26 +3,31 @@
+ include ../MCONFIG
+ include ../MRULES
+ 
++# ignore imported LIBS value, drags in too much
++LIBS=
++
  #CXXFLAGS:=$(patsubst -O2, -g, $(CXXFLAGS))
  
  # -DAUTHENTICATE
@@ -19,7 +47,7 @@
 -LIBS = $(LIBTERMCAP)
 +CXXFLAGS += -DUSE_TERMIO -DKLUDGELINEMODE -DAUTHENTICATE -DUSE_SSL \
 +	-I/usr/include/openssl -I../
-+LIBTELNET = ../libtelnet/libtelnet.a 
++LIBTELNET = ../libtelnet/libtelnet.a
 +LIBS += $(LIBTERMCAP) $(LIBTELNET) -lssl -lcrypto
  
  SRCS = commands.cc main.cc network.cc ring.cc sys_bsd.cc telnet.cc \
@@ -28,13 +56,14 @@
 +	glue.cc glue2.cc
  
  OBJS = $(patsubst %.cc, %.o, $(SRCS))
- 
+-
 -telnet: $(OBJS)
+-	$(CXX) $(LDFLAGS) $^ $(LIBS) -o $@
 +telnet: $(OBJS) $(LIBTELNET)
- 	$(CXX) $(LDFLAGS) $^ $(LIBS) -o $@
++	$(CXX) -static-libgcc $(LDFLAGS) $^ $(LIBS) -o $@
  
  include depend.mk
-@@ -22,7 +25,7 @@
+ depend:
  	$(CXX) $(CXXFLAGS) -MM $(SRCS) >depend.mk
  
  install: telnet
@@ -133,7 +162,55 @@
  	    perror("Execl");
  	    _exit(1);
  	}
-@@ -1902,6 +1917,16 @@
+@@ -1510,10 +1525,10 @@
+ 
+ #if	defined(AUTHENTICATE)
+ struct authlist {
+-	char	*name;
+-	char	*help;
+-	int	(*handler)(const char *, const char *);
+-	int	narg;
++    const char	*name;
++    const char	*help;
++    int	(*handler)(const char *, const char *);
++    int	narg;
+ };
+ 
+ static int auth_help (const char *, const char *);
+@@ -1833,8 +1848,22 @@
+ 	if (*portp == '-') {
+ 	    portp++;
+ 	    telnetport = 1;
+-	} else
++	} else {
+ 	    telnetport = 0;
++	    if (*portp >='0' && *portp<='9') {
++	       char *end;
++	       long int p;
++
++	       p=strtol(portp, &end, 10);
++	       if (ERANGE==errno && (LONG_MIN==p || LONG_MAX==p)) {
++	          fprintf(stderr, "telnet: port %s overflows\n", portp);
++		  return 0;
++	       } else if (p<=0 || p>=65536) {
++	          fprintf(stderr, "telnet: port %s out of range\n", portp);
++		  return 0;
++	       }
++	    }
++	}
+     }
+     else {
+ 	portp = "telnet";
+@@ -1860,7 +1889,7 @@
+ 	if (res < 0)
+ 	    return 0;
+     }
+-        
++
+     /* Resolve both the host and service simultaneously. */
+     res = getaddrinfo(resolv_hostp, portp, &hints, &hostaddr);
+     if (res == EAI_NONAME) {
+@@ -1902,6 +1931,16 @@
  		    NI_NUMERICHOST | NI_NUMERICSERV);
  
  	printf("Trying %s...\n", name);
@@ -150,13 +227,13 @@
  	x = nlink.connect(debug, tmpaddr, srp, srlen, tos);
  	if (!x)
  	    goto err;
-@@ -1909,18 +1934,18 @@
+@@ -1909,18 +1948,18 @@
  	    goto nextaddr;
  
  	connected++;
 +
 +#ifdef USE_SSL
-+	if (strcmp(hostp, "localhost") != 0) {
++	if (ssl_secure_flag || (strcmp(hostp, "localhost") != 0)) {
 +	  /* autologin = 1; */
 +	  use_authentication=1;
 +	}
@@ -177,7 +254,63 @@
  
      cmdrc(hostp, hostname, portp);
      freeaddrinfo(hostaddr);
-@@ -2233,22 +2258,18 @@
+@@ -1966,6 +2005,9 @@
+ #if	defined(AUTHENTICATE)
+ 	authhelp[] =	"turn on (off) authentication ('auth ?' for more)",
+ #endif
++#if	defined(USE_SSL)
++	startsslhelp[] = "switch to telnet-over-ssl (use 'auth' for ssl-over-telnet)",
++#endif
+ 	zhelp[] =	"suspend telnet",
+ /*	shellhelp[] =	"invoke a subshell", */
+ 	envhelp[] =	"change environment variables ('environ ?' for more)",
+@@ -1981,6 +2023,34 @@
+     return 0;
+ }
+ 
++#if defined(USE_SSL)
++static int startssl_cmd(void)
++{
++	if(ssl_con == NULL)
++	{
++		fprintf(stderr,"telnet: Internal error - ssl_con not initialised.\n");
++		return 1;
++	}
++
++	if(ssl_active_flag)
++	{
++		fprintf(stderr,"telnet: SSL already in use.\n");
++		return 1;
++	}
++  
++	if (SSL_connect(ssl_con) < 1)
++	{
++		ERR_print_errors_fp(stderr);
++		fflush(stderr);
++	} else {
++		display_connect_details(ssl_con,ssl_debug_flag);
++		ssl_active_flag=1;
++		ssl_only_flag=1;
++	}
++	return 1;
++}
++#endif /* USE_SSL */
++
+ static int slc_mode_import_0(void) {
+     slc_mode_import(0);
+     return 1;
+@@ -2028,6 +2098,10 @@
+ #endif
+     // BIND("encrypt", encrypthelp, encrypt_cmd);
+ 
++#if	defined(USE_SSL)
++	BIND("startssl", startsslhelp, startssl_cmd);
++#endif
++
+     BIND("z", zhelp, suspend);
+ 
+ #if defined(TN3270)   /* why?! */
+@@ -2233,22 +2307,18 @@
  }
  
  void cmdrc(const char *m1, const char *m2, const char *port) {
@@ -426,7 +559,7 @@
  		*argp = 0;
 --- netkit-telnet-ssl-0.17.24+0.1.orig/telnet/netlink.cc
 +++ netkit-telnet-ssl-0.17.24+0.1/telnet/netlink.cc
-@@ -12,6 +12,7 @@
+@@ -12,12 +12,27 @@
  #include "proto.h"
  #include "ring.h"
  #include <libtelnet/sslapp.h>
@@ -434,7 +567,56 @@
  
  /* In Linux, this is an enum */
  #if defined(__linux__) || defined(IPPROTO_IP)
-@@ -70,11 +71,11 @@
+ #define HAS_IPPROTO_IP
+ #endif
+ 
++/* code from Peter 'Luna' Runestig <peter@runestig.com> */
++static int select_read(int rfd)
++/* timeout = 20 seconds */
++{
++    fd_set rfds;
++    struct timeval tv;
++
++    FD_ZERO(&rfds);
++    FD_SET(rfd, &rfds);
++    tv.tv_sec = 20;
++    tv.tv_usec = 0;
++    return select(rfd + 1, &rfds, NULL, NULL, &tv);
++}
++
+ netlink nlink;
+ 
+ class netchannel : public ringbuf::source {
+@@ -26,12 +41,23 @@
+ 	int net = nlink.getfd();
+ 	int l;
+ #ifdef USE_SSL
+-	if (ssl_active_flag)
+-	  l = SSL_read(ssl_con, buf, maxlen);
+-	else
++	if (ssl_active_flag) {
++	    do {
++		l = SSL_read(ssl_con, buf, maxlen);
++		/*
++		 * SSL_ERROR_WANT_READ may occur if an SSL/TLS rehandshake occurs.
++		 * This means that data was available at the socket, but all was
++		 * consumed by SSL itself, so we select (w/20s timeout)  and retry.
++		 */
++	    } while (l<0 &&
++		     (SSL_ERROR_WANT_READ == SSL_get_error(ssl_con, l)) &&
++		     (select_read(net) > 0));
++        } else
+ #endif /* USE_SSL */
+-	l = recv(net, buf, maxlen, 0);
+-	if (l<0 && errno == EWOULDBLOCK) l = 0;
++        {
++  	    l = recv(net, buf, maxlen, 0);
++	    if (l<0 && errno == EWOULDBLOCK) l = 0;
++        }
+ 	return l;
+     }
+ };
+@@ -70,11 +96,11 @@
  
  
  netlink::netlink() { net = -1; }
@@ -448,7 +630,7 @@
  	(setsockopt(net, SOL_SOCKET, SO_DEBUG, &debug, sizeof(debug))) < 0) {
  	perror("setsockopt (SO_DEBUG)");
      }
-@@ -95,7 +96,8 @@
+@@ -95,7 +121,8 @@
  	ssl_active_flag=0;
      }
  #endif /* USE_SSL */
@@ -458,7 +640,7 @@
      net = -1;
  }
  
-@@ -142,7 +144,8 @@
+@@ -142,7 +169,8 @@
  {
      int on=1;
      int res;
@@ -468,7 +650,7 @@
      res = socket(addr->ai_family);
      if (res < 2)
  	return res;
-@@ -192,10 +195,24 @@
+@@ -192,10 +220,24 @@
  	/* bind in the network descriptor */
      	SSL_set_fd(ssl_con,net);
  
@@ -477,7 +659,7 @@
 +	{
 +	  static char local_host[256] = { 0 };
 +	  int len = sizeof(local_host);
-+	  
++
 +	  if (!local_host[0]) {
 +	    gethostname(local_host, len);        /* WAS &len!!! */
 +	    local_host[sizeof(local_host)-1] = 0;
@@ -579,7 +761,7 @@
  .Oo
  .Ar host
  .Op Ar port
-@@ -152,44 +154,45 @@
+@@ -152,44 +154,47 @@
  command below.
  .It Fl z Ar option
  Set SSL (Secure Socket Layer) parameters. The default is to negotiate
@@ -587,7 +769,9 @@
 +via telnet protocol if SSL is available at server side and then to
  switch it on. In this mode you can connect to both conventional and
 -SSL enhanced telnetd's.
-+SSL enhanced telnetd's. If the connection is made to localhost then
++SSL enhanced telnetd's. If the connection is made to localhost and 
++.Ic -z secure
++is not set, then
 +SSL is not enabled.
  .Pp
  The SSL parameters are:
@@ -640,7 +824,7 @@
  .\" TODO
  Set the preferred ciphers to
  .Ar ciph_list .
-@@ -319,10 +322,6 @@
+@@ -319,10 +324,6 @@
  List the current status of the various types of
  authentication.
  .El
@@ -651,7 +835,7 @@
  .It Ic close
  Close the connection to the remote host, if any, and return to command
  mode.
-@@ -332,49 +331,49 @@
+@@ -332,49 +333,49 @@
  and
  .Ic toggle
  values (see below).
@@ -744,7 +928,24 @@
  .It Ic environ Ar arguments... 
  The
  .Ic environ
-@@ -1079,17 +1078,17 @@
+@@ -1017,6 +1018,16 @@
+ .Ic slc
+ command.
+ .El
++.It Ic startssl
++Attempt to negotiate telnet-over-SSL (as with the
++.Ic -z ssl
++option). This is useful when connecting to non-telnetds such
++as imapd (with the
++.Ic STARTTLS
++command). To control SSL when connecting to a SSL-enabled
++telnetd, use the
++.Ic auth
++command instead.
+ .It Ic status
+ Show the current status of
+ .Nm telnet .
+@@ -1079,17 +1090,17 @@
  .Dv FALSE
  (see
  .Xr stty  1  ) .
@@ -773,7 +974,7 @@
  .It Ic autologin
  If the remote side supports the
  .Dv TELNET AUTHENTICATION
-@@ -1174,9 +1173,9 @@
+@@ -1174,9 +1185,9 @@
  .Ic super user ) .
  The initial value for this toggle is
  .Dv FALSE .
@@ -786,7 +987,19 @@
  .It Ic localchars
  If this is
  .Dv TRUE ,
-@@ -1263,16 +1262,16 @@
+@@ -1221,8 +1232,9 @@
+ is sent as
+ .Ic abort  ,
+ and
+-.Ic eof and
+-.B suspend
++.Ic eof
++and
++.Ic suspend
+ are sent as
+ .Ic eof and
+ .Ic susp ,
+@@ -1263,16 +1275,16 @@
  Toggles the display of all terminal data (in hexadecimal format).
  The initial value for this toggle is
  .Dv FALSE .
@@ -1007,7 +1220,7 @@
 +	   -DLOGIN_WRAPPER=\"/usr/lib/telnetlogin\" \
 +	   -DUSE_SSL -I/usr/include/openssl -I..
 +LIBTELNET = ../libtelnet/libtelnet.a 
-+LIBS += $(LIBTERMCAP) $(LIBTELNET) -lssl -lcrypto
++LIBS += $(LIBTELNET) -lssl -lcrypto
  
  OBJS = telnetd.o state.o termstat.o slc.o sys_term.o utility.o \
  	global.o setproctitle.o
@@ -1096,15 +1309,43 @@
   * Allocate global variables.  
 --- netkit-telnet-ssl-0.17.24+0.1.orig/telnetd/issue.net.5
 +++ netkit-telnet-ssl-0.17.24+0.1/telnetd/issue.net.5
-@@ -15,7 +15,7 @@
+@@ -15,26 +15,26 @@
  .Pa /etc/issue.net
  is a text file which contains a message or system identification to be
  printed before the login prompt of a telnet session. It may contain
 -various `%-char' sequences. The following sequences are supported by
-+various `%\-char' sequences. The following sequences are supported by
++various `%\&\-char' sequences. The following sequences are supported by
  .Ic telnetd :
  .Bl -tag -offset indent -compact -width "abcde"
- .It %t
+-.It %t
++.It %\&t
+ - show the current tty
+-.It %h
++.It %\&h
+ - show the system node name (FQDN)
+-.It %D
++.It %\&D
+ - show the name of the NIS domain
+-.It %d
++.It %\&d
+ - show the current time and date
+-.It %s
++.It %\&s
+ - show the name of the operating system
+-.It %m
++.It %\&m
+ - show the machine (hardware) type
+-.It %r
++.It %\&r
+ - show the operating system release
+-.It %v
++.It %\&v
+ - show the operating system version
+-.It %%
++.It %\&%
+ - display a single '%' character
+ .El
+ .Sh FILES
 --- netkit-telnet-ssl-0.17.24+0.1.orig/telnetd/pathnames.h
 +++ netkit-telnet-ssl-0.17.24+0.1/telnetd/pathnames.h
 @@ -31,7 +31,7 @@
@@ -1295,7 +1536,15 @@
  .Op Fl a Ar authmode
  .Op Fl D Ar debugmode
  .Op Fl L Ar loginprg
-@@ -175,6 +175,9 @@
+@@ -50,6 +50,7 @@
+ .Op Fl X Ar authtype
+ .Op Fl edebug
+ .Op Fl debug Ar port
++.Op Fl z Ar sslopt
+ .Sh DESCRIPTION
+ The
+ .Nm telnetd
+@@ -175,6 +176,9 @@
  if the client is still there, so that idle connections
  from machines that have crashed or can no longer
  be reached may be cleaned up.
@@ -1305,7 +1554,7 @@
  .It Fl s
  This option is only enabled if
  .Nm telnetd
-@@ -219,12 +222,16 @@
+@@ -219,12 +223,16 @@
  only accepts connections from SSL enhanced telnet with option 
  .Ic -z ssl
  .It Ic nossl, !ssl
@@ -1324,7 +1573,16 @@
  authenticate without password.
  .It Ic certrequired
  client certificate is mandatory
-@@ -451,7 +458,6 @@
+@@ -307,7 +315,7 @@
+ .Ed
+ .Pp
+ The pseudo-terminal allocated to the client is configured
+-to operate in \*(lqcooked\*(rq mode, and with 
++to operate in \(lqcooked\(rq mode, and with 
+ .Dv XTABS
+ .Dv CRMOD
+ enabled (see
+@@ -451,7 +459,6 @@
  is compiled with support for data encryption, and
  indicates a willingness to decrypt
  the data stream.
@@ -1351,7 +1609,14 @@
  #ifdef LOGIN_WRAPPER
  char *loginprg = LOGIN_WRAPPER;
  #else
-@@ -228,7 +229,7 @@
+@@ -222,13 +223,12 @@
+ 	 * certificate that we will be running with as we cannot
+ 	 * be sure of the cwd when we are launched
+ 	 */
+-	sprintf(cert_filepath,"%s/%s",X509_get_default_cert_dir(),
+-	        "telnetd.pem");
++	strcpy(cert_filepath, "/etc/telnetd-ssl/telnetd.pem");
+ 	ssl_cert_file=cert_filepath;
  	ssl_key_file=NULL;
  #endif /* USE_SSL */
  
@@ -1360,7 +1625,7 @@
  		switch(ch) {
  
  #ifdef USE_SSL
-@@ -389,6 +390,10 @@
+@@ -389,6 +389,10 @@
  			keepalive = 0;
  			break;
  
@@ -1371,7 +1636,7 @@
  #ifdef	SecurID
  		case 's':
  			/* SecurID required */
-@@ -427,7 +432,7 @@
+@@ -427,7 +431,7 @@
  
  #ifdef USE_SSL
  
@@ -1380,7 +1645,7 @@
  	    /* in secure mode we *must* switch on the base level
  	     * verify checking otherwise we cannot abort connections
  	     * at the right place!
-@@ -520,9 +525,9 @@
+@@ -520,9 +524,9 @@
  	        sprintf(errbuf,"SSL_accept error %s\n",
  		    ERR_error_string(ERR_get_error(),NULL));
  
@@ -1392,7 +1657,7 @@
  
  		/* go to sleep to make sure we are noticed */
  		sleep(10);
-@@ -571,6 +576,11 @@
+@@ -571,6 +575,11 @@
  #ifdef	AUTHENTICATE
  	fprintf(stderr, " [-X auth-type]");
  #endif
@@ -1404,7 +1669,7 @@
  	fprintf(stderr, "\n");
  	exit(1);
  }
-@@ -596,6 +606,18 @@
+@@ -596,6 +605,18 @@
      /*
       * Handle the Authentication option before we do anything else.
       */
@@ -1423,7 +1688,7 @@
      send_do(TELOPT_AUTHENTICATION, 1);
      while (his_will_wont_is_changing(TELOPT_AUTHENTICATION))
  	ttloop();
-@@ -654,7 +676,6 @@
+@@ -654,7 +675,6 @@
      send_do(TELOPT_TTYPE, 1);
      send_do(TELOPT_TSPEED, 1);
      send_do(TELOPT_XDISPLOC, 1);
@@ -1431,7 +1696,7 @@
      while (
  #if	defined(ENCRYPT)
  	   his_do_dont_is_changing(TELOPT_ENCRYPT) ||
-@@ -698,10 +719,6 @@
+@@ -698,10 +718,6 @@
  	while (sequenceIs(xdisplocsubopt, baseline))
  	    ttloop();
      }
@@ -1442,7 +1707,7 @@
      if (his_state_is_will(TELOPT_TTYPE)) {
  	char first[256], last[256];
  
-@@ -852,7 +869,7 @@
+@@ -852,7 +868,7 @@
  static void
  doit(struct sockaddr *who, socklen_t who_len)
  {
@@ -1451,7 +1716,7 @@
  	int level;
  	char user_name[256];
  	int i;
-@@ -867,7 +884,8 @@
+@@ -867,7 +883,8 @@
  
  	/* get name of connected client */
  	if (getnameinfo(who, who_len, remote_host_name,
@@ -1567,19 +1832,48 @@
  				n = send(net, lp->buf, 1, MSG_OOB);
  				if (n > 0) {
  					urg = 0;
-@@ -282,6 +318,11 @@
+@@ -282,15 +318,25 @@
  	vector->iov_base = (char *)vector->iov_base + skip;
  	vector->iov_len -= skip;
  
+-	n = writev(net, vector, len);
++	if(vector->iov_len == 0 ) {
++	  n=0;
++	} else {
++
 +#ifdef USE_SSL
-+	if (ssl_active_flag)
-+	  n = SSL_writev(ssl_con, vector, len);	/* normal write */
-+	else
++	  if (ssl_active_flag)
++		n = SSL_writev(ssl_con, vector, len);	/* normal write */
++	  else	
 +#endif /* USE_SSL */
- 	n = writev(net, vector, len);
++		n = writev(net, vector, len);
  
  epi:
-@@ -323,16 +364,22 @@
+-	free(vector);
++	  free(vector);
+ 
+-	if (n < 0) {
++	  if (n < 0) {
+ 		if (errno != EWOULDBLOCK && errno != EINTR)
+-			cleanup(0);
++		  cleanup(0);
+ 		return;
++	  }
+ 	}
+ 
+ 	len = n + skip;
+@@ -315,6 +361,10 @@
+ 		}
+ 	}
+ 
++	if(ltrailing && (len==0)) {
++		ltrailing=trailing=0;
++	}
++
+ 	skip = len;
+ }
+ 
+@@ -323,16 +373,22 @@
   *             Send as much data as possible to the network,
   *     handling requests for urgent data.
   */
@@ -1606,7 +1900,7 @@
  }
  
  
-@@ -983,7 +1030,7 @@
+@@ -983,7 +1039,7 @@
  			((pointer[3] & AUTH_HOW_MASK) == AUTH_HOW_MUTUAL) ?
  			"MUTUAL" : "ONE-WAY");
  
@@ -1615,17 +1909,24 @@
  		netoprintf("%s", buf);
  		break;
  
-@@ -1191,7 +1238,8 @@
+@@ -1191,7 +1247,15 @@
  		size_t l;
  		size_t m = tail->len;
  
 -		p = nextitem(tail->buf, tail->buf + tail->len, buf, end);
-+		p = nextitem((unsigned char *) tail->buf, (unsigned char *) (tail->buf + tail->len),
-+			     (unsigned char *) buf, (unsigned char *) end);
++		if((tail->buf == NULL) || (tail->len==0))
++		{
++			p = nextitem((unsigned char *) buf, (unsigned char *) end,0,0);
++		}
++		else
++		{
++			p = nextitem((unsigned char *) tail->buf, (unsigned char *) (tail->buf + tail->len),
++						 (unsigned char *) buf, (unsigned char *) end);
++		}
  		ltrailing = !p;
  		if (ltrailing) {
  			p = end;
-@@ -1245,7 +1293,7 @@
+@@ -1245,7 +1309,7 @@
  		const char *p;
  		size_t l;
  
@@ -1634,6 +1935,18 @@
  		ltrailing = !p;
  		if (ltrailing) {
  			p = end;
+--- netkit-telnet-ssl-0.17.24+0.1.orig/telnetlogin/Makefile
++++ netkit-telnet-ssl-0.17.24+0.1/telnetlogin/Makefile
+@@ -3,6 +3,9 @@
+ include ../MCONFIG
+ include ../MRULES
+ 
++# ignore imported LIBS value, drags in too much
++LIBS=
++
+ OBJS = telnetlogin.o
+ 
+ telnetlogin: $(OBJS)
 --- netkit-telnet-ssl-0.17.24+0.1.orig/telnetlogin/telnetlogin.8
 +++ netkit-telnet-ssl-0.17.24+0.1/telnetlogin/telnetlogin.8
 @@ -28,7 +28,7 @@
@@ -1709,7 +2022,145 @@
     }
 --- netkit-telnet-ssl-0.17.24+0.1.orig/debian/changelog
 +++ netkit-telnet-ssl-0.17.24+0.1/debian/changelog
-@@ -1,3 +1,109 @@
+@@ -1,3 +1,247 @@
++netkit-telnet-ssl (0.17.24+0.1-22) unstable; urgency=low
++
++  * General package tidy:
++    + Use set -e in all maintainer scripts.
++    + Update maintainer email.
++    + Remove DM-Upload-Allowed now I have Ascended.
++    + Standards-Version: 3.8.2 (no changes).
++    + Override non-applicable lintian tags no-homepage-field and
++      spelling-error-in-binary.
++    + Use dh_lintian to install overrides
++    + Build-depend on debhelper version with dh_lintian.
++
++ -- Ian Beckwith <ianb@debian.org>  Wed, 22 Jul 2009 01:30:39 +0100
++
++netkit-telnet-ssl (0.17.24+0.1-21) unstable; urgency=low
++
++  * Update debian/NEWS with details of openssl problems
++    and key rollover.
++  * debian/control Depends:
++    + Explicitly depend on fixed openssl.
++    + Remove versioned dependencies on versions of dpkg and base-files
++      that long predate oldstable.
++    + Depend on passwd, needed for {user,group}del.
++  * telnetd-ssl postinst/postrm: fix update-inetd --remove regexp.
++  * Added stub debian/watch (upstream is dead).
++  * Standards-Version: 3.8.0 (no changes).
++
++ -- Ian Beckwith <ianb@erislabs.net>  Fri, 13 Jun 2008 13:11:15 +0100
++
++netkit-telnet-ssl (0.17.24+0.1-20) unstable; urgency=low
++
++  * debian/control:
++    + Add DM-Upload-Allowed: yes
++    + Maintainer: update my email address.
++    + Standard-Version: 3.7.3 (no changes).
++  * */Makefile: cut out unnecessary linking.
++  * debian/NEWS: reformat to keep lintian happy.
++  * debian/telnetd.postinst: work round checkbashisms false positive.
++  * telnetd/telnetd.8: fix quoting.
++  * debian/rules: remove unneeded debhelper calls.
++
++ -- Ian Beckwith <ianb@erislabs.net>  Wed, 26 Mar 2008 02:55:38 +0000
++
++netkit-telnet-ssl (0.17.24+0.1-19) unstable; urgency=low
++
++  * telnet-ssl: Handle SSL_ERROR_WANT_READ, triggered by SSL
++    rehandshaking, based on patch by Alfred Arnold.
++  * Fix compiler warnings when converting string constants
++    to 'char *'s.
++
++ -- Ian Beckwith <ianb@nessie.mcc.ac.uk>  Thu, 04 Oct 2007 22:30:28 +0100
++
++netkit-telnet-ssl (0.17.24+0.1-18) unstable; urgency=low
++
++  * debian/control:
++    + Added ${misc:Depends} to Depends.
++    + Updated long description.
++  * debian/rules:
++    + Use $(CURDIR) instead of `pwd`.
++    + Only run make distclean if MCONFIG exists,
++      instead of ignoring return code.
++  * Change telnet-ssl menu section to match new menu policy.
++  * Bump debhelper compat level to 5.
++
++ -- Ian Beckwith <ianb@nessie.mcc.ac.uk>  Mon, 06 Aug 2007 17:19:38 +0100
++
++netkit-telnet-ssl (0.17.24+0.1-17) unstable; urgency=low
++
++  * Preserve telnetd arguments across all upgrades, including
++    ones which modify the inetd.conf entry (Closes: #421503).
++  * Avoid spurious updates when telnetd has arguments in inetd.conf.
++
++ -- Ian Beckwith <ianb@nessie.mcc.ac.uk>  Mon, 14 May 2007 02:25:45 +0100
++
++netkit-telnet-ssl (0.17.24+0.1-16) unstable; urgency=low
++
++  * Fix inetd dependencies, thanks to Marco d'Itri (Closes: #402583).
++    + Drop dependencies on netbase and update-inetd.
++    + Add dependency on openbsd-inetd | inet-superserver.
++
++ -- Ian Beckwith <ianb@nessie.mcc.ac.uk>  Wed, 13 Dec 2006 03:28:58 +0000
++
++netkit-telnet-ssl (0.17.24+0.1-15) unstable; urgency=low
++
++  * debian/control: add Depends: on update-inetd.
++
++ -- Ian Beckwith <ianb@nessie.mcc.ac.uk>  Wed,  6 Dec 2006 05:56:34 +0000
++
++netkit-telnet-ssl (0.17.24+0.1-14) unstable; urgency=medium
++
++  * Changed telnetd-ssl.telnetd-ssl to telnetd-ssl in inetd configuration.
++    Former format not supported by inetutils-inetd.
++    Thanks to Alberto Gonzalez Iniesta.
++    urgency=medium to try and get this fix in etch.
++  * Install telnet README files in /usr/share/doc/telnet-ssl/
++    (rather than /usr/share/doc/telnet/)
++
++ -- Ian Beckwith <ianb@nessie.mcc.ac.uk>  Sat, 11 Nov 2006 17:11:42 +0000
++
++netkit-telnet-ssl (0.17.24+0.1-13) unstable; urgency=low
++
++  * Tweaked fix for #122763.
++  * New telnet command: startssl - start SSL when talking
++    to non-telnetds (eg imapd with STARTTLS) (Closes: #187202).
++  * telnetd.postinst: configure: rewrite netkit-telnet's
++    inetd entry if it still exists.
++  * telnetd.8: add -z sslopt to options in SYNOPSIS.
++
++ -- Ian Beckwith <ianb@nessie.mcc.ac.uk>  Sun, 24 Sep 2006 01:40:09 +0100
++
++netkit-telnet-ssl (0.17.24+0.1-12) unstable; urgency=low
++
++  * telnetd-ssl: Fixed segfault in netwritebuf() (Closes: #122763).
++  * Added Christoph Martin to Uploaders:.
++
++ -- Ian Beckwith <ianb@nessie.mcc.ac.uk>  Mon, 10 Jul 2006 02:37:20 +0100
++
++netkit-telnet-ssl (0.17.24+0.1-11) unstable; urgency=low
++
++  * Move telnetd.pem to /etc/telnetd-ssl (Closes: #368416):
++  * Use private copy of openssl.cnf (from openssl_0.9.8b-2) (Closes: #372105).
++  * Set Common Name to FQDN when generating certificate.
++  * Standards-Version: 3.7.2 (No changes).
++
++ -- Ian Beckwith <ianb@nessie.mcc.ac.uk>  Fri, 16 Jun 2006 19:10:02 +0100
++
++netkit-telnet-ssl (0.17.24+0.1-10) unstable; urgency=low
++
++  * telnet: don't disable ssl to localhost if -z secure
++    is set (Closes: #339528, #339535).
++  * Applied Justin Pryzby's netkit-telnet patch to reject invalid
++    port numbers (See #300273).
++  * Man page fixes:
++    + telnet.1: formatting fix, thanks to Nicolas François (Closes: #357737).
++    + issue.net.5: insert \& in %-sequences to stop groff interpreting them.
++
++ -- Ian Beckwith <ianb@nessie.mcc.ac.uk>  Fri, 28 Apr 2006 20:13:02 +0100
++
 +netkit-telnet-ssl (0.17.24+0.1-9) unstable; urgency=low
 +
 +  * Fixed socks problems, thanks to IWAMURO Motonori (Closes: #314416).
@@ -1819,7 +2270,7 @@
  netkit-telnet (0.17-24) unstable; urgency=low
  
    * New maintainer. (Closes: #249714)
-@@ -53,6 +159,21 @@
+@@ -53,6 +297,21 @@
  
   -- Herbert Xu <herbert@debian.org>  Sun,  7 Apr 2002 09:41:12 +1000
  
@@ -1834,14 +2285,14 @@
 +  * Provide telnet-server (#120180).
 +  * Fixed IAC+SB crash (#122313, #128988).
 +  * drop dummy ssltelnet package
-+  * reintroduce options -4 and -6 (closes #129253)
++  * reintroduce options -4 and -6 (closes: #129253)
 +
 + -- Christoph Martin <christoph.martin@uni-mainz.de>  Wed,  6 Mar 2002 17:07:23 +0100
 +
  netkit-telnet (0.17-17) unstable; urgency=high
  
    * Provide telnet-server (closes: #120180).
-@@ -60,6 +181,20 @@
+@@ -60,6 +319,20 @@
  
   -- Herbert Xu <herbert@debian.org>  Fri, 18 Jan 2002 20:13:23 +1100
  
@@ -1862,7 +2313,7 @@
  netkit-telnet (0.17-16) unstable; urgency=low
  
    * Set resolv_hostp outside the source routing ifdef in telnetd.
-@@ -80,6 +215,26 @@
+@@ -80,6 +353,26 @@
  
   -- Herbert Xu <herbert@debian.org>  Sat, 11 Aug 2001 17:52:25 +1000
  
@@ -1889,7 +2340,7 @@
  netkit-telnet (0.17-13) unstable; urgency=medium
  
    * Updated devpts check to include devfs as well.
-@@ -106,6 +261,13 @@
+@@ -106,6 +399,13 @@
  
   -- Herbert Xu <herbert@debian.org>  Fri, 13 Apr 2001 19:34:12 +1000
  
@@ -1903,7 +2354,7 @@
  netkit-telnet (0.17-9) unstable; urgency=low
  
    * Fixed path to license file (Christoph Martin, closes: #86476).
-@@ -116,6 +278,14 @@
+@@ -116,6 +416,14 @@
  
   -- Herbert Xu <herbert@debian.org>  Sun, 25 Feb 2001 00:00:59 +1100
  
@@ -1918,7 +2369,7 @@
  netkit-telnet (0.17-8) unstable; urgency=low
  
    * Removed remnant of suidregister from telnetd (closes: #85882).
-@@ -124,6 +294,13 @@
+@@ -124,6 +432,13 @@
  
   -- Herbert Xu <herbert@debian.org>  Sat, 17 Feb 2001 12:53:11 +1100
  
@@ -1932,7 +2383,7 @@
  netkit-telnet (0.17-7) unstable; urgency=low
  
    * Added includes for gcc 2.97 (Randolph Chung, closes: #83337).
-@@ -132,6 +309,15 @@
+@@ -132,6 +447,15 @@
  
   -- Herbert Xu <herbert@debian.org>  Mon, 29 Jan 2001 21:10:59 +1100
  
@@ -1948,7 +2399,7 @@
  netkit-telnet (0.17-6) unstable; urgency=low
  
    * Added menu entry for telnet (closes: #74845).
-@@ -144,6 +330,13 @@
+@@ -144,6 +468,13 @@
  
   -- Herbert Xu <herbert@debian.org>  Fri, 22 Sep 2000 23:12:57 +1100
  
@@ -1962,7 +2413,7 @@
  netkit-telnet (0.17-4) unstable; urgency=low
  
    * Relaxed telnetlogin a bit.
-@@ -196,6 +389,16 @@
+@@ -196,6 +527,16 @@
  
   -- Herbert Xu <herbert@debian.org>  Mon, 24 Apr 2000 16:58:22 +1000
  
@@ -1979,7 +2430,7 @@
  netkit-telnet (0.16-3) frozen unstable; urgency=medium
  
    * Restored the default to not being 8-bit clean since it breaks SunOS
-@@ -213,6 +416,18 @@
+@@ -213,6 +554,18 @@
  
   -- Herbert Xu <herbert@debian.org>  Sun, 12 Mar 2000 21:10:47 +1100
  
@@ -1998,7 +2449,7 @@
  netkit-telnet (0.16-1) frozen unstable; urgency=low
  
    * New upstream release with security fixes.
-@@ -220,6 +435,15 @@
+@@ -220,6 +573,15 @@
  
   -- Herbert Xu <herbert@debian.org>  Thu,  3 Feb 2000 13:42:29 +1100
  
@@ -2014,7 +2465,7 @@
  netkit-telnet (0.14-9) unstable; urgency=low
  
    * Compile login with -g -O2 -Wall.
-@@ -228,6 +452,31 @@
+@@ -228,6 +590,31 @@
  
   -- Herbert Xu <herbert@debian.org>  Tue, 30 Nov 1999 22:43:39 +1100
  
@@ -2046,7 +2497,7 @@
  netkit-telnet (0.14-8) unstable; urgency=low
  
    * Call fatalperror() instead of fatal() when getpty() fails.
-@@ -267,6 +516,15 @@
+@@ -267,6 +654,15 @@
  
   -- Herbert Xu <herbert@debian.org>  Thu,  2 Sep 1999 21:18:06 +1000
  
@@ -2062,7 +2513,7 @@
  netkit-telnet (0.14-2) unstable; urgency=low
  
    * telnetd now depends on adduser and passwd (fixes #43515).
-@@ -294,6 +552,34 @@
+@@ -294,6 +690,34 @@
  
   -- Herbert Xu <herbert@debian.org>  Tue, 16 Mar 1999 15:24:36 +1100
  
@@ -2097,7 +2548,7 @@
  netkit-telnet (0.12-4) frozen unstable; urgency=low
  
    * Uploaded to slink.
-@@ -318,3 +604,4 @@
+@@ -318,3 +742,4 @@
  
   -- Herbert Xu <herbert@debian.org>  Mon, 28 Sep 1998 16:50:43 +1000
  
@@ -2119,7 +2570,7 @@
 +zcat ../netkit-telnet-ssl_0.17.17+0.1-2.diff.gz | patch -p1
 --- netkit-telnet-ssl-0.17.24+0.1.orig/debian/control
 +++ netkit-telnet-ssl-0.17.24+0.1/debian/control
-@@ -1,27 +1,48 @@
+@@ -1,27 +1,47 @@
 -Source: netkit-telnet
 +Source: netkit-telnet-ssl
  Section: net
@@ -2128,15 +2579,16 @@
 -Standards-Version: 3.6.1
 -Build-Depends: debhelper, libncurses-dev
 +Priority: extra
-+Maintainer: Ian Beckwith <ianb@nessie.mcc.ac.uk>
-+Standards-Version: 3.6.2
-+Build-Depends: debhelper (>=4), libncurses-dev, libssl-dev
++Maintainer: Ian Beckwith <ianb@debian.org>
++Uploaders: Christoph Martin <christoph.martin@uni-mainz.de>
++Standards-Version: 3.8.2
++Build-Depends: debhelper (>= 6.0.7~), libncurses-dev, libssl-dev (>= 0.9.8g-9)
  
 -Package: telnet
 +Package: telnet-ssl
  Architecture: any
 -Depends: netbase, ${shlibs:Depends}
-+Depends: ${shlibs:Depends}
++Depends: libssl0.9.8 (>= 0.9.8g-9), ${shlibs:Depends}
  Replaces: netstd
 +Conflicts: telnet, ssltelnet (<< 0.12)
  Provides: telnet-client
@@ -2145,23 +2597,23 @@
   The telnet command is used for interactive communication with another host
   using the TELNET protocol.
 + .
-+ SSL telnet(d) replaces normal telnet(d) using SSL authentication and 
-+ encryption. It interoperates with normal telnet(d) in both directions.
++ SSL telnet replaces normal telnet using SSL authentication and
++ encryption. It interoperates with normal telnetd in both directions.
 + It checks if the other side is also talking SSL, if not it falls back
 + to normal telnet protocol.
 + .
-+ Advantages over normal telnet(d): Your passwords and the data you send
-+ will not go in cleartext over the line. Nobody can get it with 
++ Advantages over normal telnet: Your passwords and the data you send
++ will not go in cleartext over the line. Nobody can get it with
 + tcpdump or similar tools. With SSLtelnet you can also connect to
-+ https-server like https://www.netscape.com. Just do 
-+ 'telnet www.netscape.com 443'
++ https-server like https://www.mozilla.org. Just do
++ 'telnet -z ssl www.mozilla.org 443'
  
 -Package: telnetd
 +Package: telnetd-ssl
  Architecture: any
 -Priority: optional
 -Depends: adduser, base-files (>= 2.1.8), dpkg (>= 1.7.0), netbase, passwd, ${shlibs:Depends}
-+Depends: adduser, base-files (>= 2.1.8), dpkg (>= 1.7.0), netbase, passwd, openssl (>= 0.9.2b), ${shlibs:Depends}
++Depends: adduser, openbsd-inetd | inet-superserver, passwd, openssl (>= 0.9.8g-9), libssl0.9.8 (>= 0.9.8g-9), ${shlibs:Depends}, ${misc:Depends}
  Replaces: netstd
  Provides: telnet-server
 -Conflicts: suidmanager (<< 0.50)
@@ -2172,16 +2624,14 @@
   communication protocol.
 -
 + .
-+ SSL telnet(d) replaces normal telnet(d) using SSL authentication and 
-+ encryption. It interoperates with normal telnet(d) in both directions.
++ SSL telnetd replaces normal telnetd using SSL authentication and
++ encryption. It interoperates with normal telnetd in both directions.
 + It checks if the other side is also talking SSL, if not it falls back
 + to normal telnet protocol.
 + .
-+ Advantages over normal telnet(d): Your passwords and the data you send
-+ will not go in cleartext over the line. Nobody can get it with 
-+ tcpdump or similar tools. With SSLtelnet you can also connect to
-+ https-server like https://www.netscape.com. Just do 
-+ 'telnet www.netscape.com 443'
++ Advantages over normal telnetd: Your passwords and the data you send
++ will not go in cleartext over the line. Nobody can get it with
++ tcpdump or similar tools.
 --- netkit-telnet-ssl-0.17.24+0.1.orig/debian/copyright
 +++ netkit-telnet-ssl-0.17.24+0.1/debian/copyright
 @@ -15,4 +15,18 @@
@@ -2204,6 +2654,13 @@
 + */
 +
 +$Id$
+--- netkit-telnet-ssl-0.17.24+0.1.orig/debian/dirs
++++ netkit-telnet-ssl-0.17.24+0.1/debian/dirs
+@@ -1,3 +1,3 @@
+ usr/bin
+-usr/share/doc/telnet
++usr/share/doc/telnet-ssl
+ usr/share/man/man1
 --- netkit-telnet-ssl-0.17.24+0.1.orig/debian/docs
 +++ netkit-telnet-ssl-0.17.24+0.1/debian/docs
 @@ -1,2 +1,4 @@
@@ -2216,17 +2673,20 @@
 @@ -1,3 +1,3 @@
 -?package(telnet): \
 -	needs="text" section="Apps/Net" title="Telnet" command="telnet" \
+-	hints="Terminal"
 +?package(telnet-ssl): \
-+	needs="text" section="Apps/Net" title="Telnet-SSL" command="/usr/bin/telnet-ssl" \
- 	hints="Terminal"
++	needs="text" section="Applications/Network/Communication" \
++	title="Telnet-SSL" command="/usr/bin/telnet-ssl" hints="Terminal"
 --- netkit-telnet-ssl-0.17.24+0.1.orig/debian/postinst
 +++ netkit-telnet-ssl-0.17.24+0.1/debian/postinst
-@@ -1,8 +1,8 @@
- #!/bin/sh -e
+@@ -1,8 +1,9 @@
+-#!/bin/sh -e
 -# $Id$
-+# $Id$
++#!/bin/sh
  
 -update-alternatives --install /usr/bin/telnet telnet /usr/bin/telnet.netkit \
++set -e
++
 +update-alternatives --install /usr/bin/telnet telnet /usr/bin/telnet-ssl \
  		    100 --slave /usr/share/man/man1/telnet.1.gz telnet.1.gz \
 -				/usr/share/man/man1/telnet.netkit.1.gz
@@ -2235,9 +2695,11 @@
  #DEBHELPER#
 --- netkit-telnet-ssl-0.17.24+0.1.orig/debian/prerm
 +++ netkit-telnet-ssl-0.17.24+0.1/debian/prerm
-@@ -1,7 +1,7 @@
+@@ -1,7 +1,9 @@
  #!/bin/sh
  
++set -e
++
  if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
 -	update-alternatives --remove telnet /usr/bin/telnet.netkit
 +	update-alternatives --remove telnet /usr/bin/telnet-ssl
@@ -2270,10 +2732,12 @@
  		sed -e 's/^CFLAGS=\(.*\)$$/CFLAGS= -Ddebian -D_GNU_SOURCE -g \1/' \
  		    -e 's/^CXXFLAGS=\(.*\)$$/CXXFLAGS= -Ddebian -D_GNU_SOURCE -g \1/' \
  		    MCONFIG > MCONFIG.new; \
-@@ -22,26 +28,31 @@
+@@ -21,27 +27,33 @@
+ 	dh_testdir
  	dh_testroot
  
- 	-$(MAKE) distclean
+-	-$(MAKE) distclean
++	[ ! -f MCONFIG ] || $(MAKE) distclean
 +	rm -f debian/telnetd-ssl.dirs debian/telnetd-ssl.postinst debian/telnetd-ssl.postrm debian/telnetd-ssl.prerm
  
  	dh_clean
@@ -2289,7 +2753,7 @@
  	dh_installdirs
  
 -	$(MAKE) -C telnet INSTALLROOT=`pwd`/debian/tmp MANDIR=/usr/share/man \
-+	$(MAKE) -C telnet INSTALLROOT=`pwd`/debian/telnet-ssl MANDIR=/usr/share/man \
++	$(MAKE) -C telnet INSTALLROOT=$(CURDIR)/debian/telnet-ssl MANDIR=/usr/share/man \
  		install
 -	mv debian/tmp/usr/bin/telnet debian/tmp/usr/bin/telnet.netkit
 -	mv debian/tmp/usr/share/man/man1/telnet.1 \
@@ -2300,36 +2764,83 @@
 +#	mv debian/tmp/usr/bin/telnet debian/tmp/usr/bin/telnet.netkit
 +#	mv debian/tmp/usr/share/man/man1/telnet.1 \
 +#	   debian/tmp/usr/share/man/man1/telnet.netkit.1
-+	cp telnet/README debian/telnet-ssl/usr/share/doc/telnet/README.telnet
-+	cp telnet/README.old debian/telnet-ssl/usr/share/doc/telnet/README.telnet.old
-+	$(MAKE) -C telnetd INSTALLROOT=`pwd`/debian/telnetd-ssl \
++	cp telnet/README debian/telnet-ssl/usr/share/doc/telnet-ssl/README.telnet
++	cp telnet/README.old debian/telnet-ssl/usr/share/doc/telnet-ssl/README.telnet.old
++	$(MAKE) -C telnetd INSTALLROOT=$(CURDIR)/debian/telnetd-ssl \
  		MANDIR=/usr/share/man install
 -	cp telnetlogin/telnetlogin.8 debian/telnetd/usr/share/man/man8
 -	cp telnetlogin/telnetlogin debian/telnetd/usr/lib
 +	cp telnetlogin/telnetlogin.8 debian/telnetd-ssl/usr/share/man/man8
 +	cp telnetlogin/telnetlogin debian/telnetd-ssl/usr/lib
++	cp debian/openssl.cnf debian/telnetd-ssl/etc/telnetd-ssl
  
  # Build architecture-independent files here.
  binary-indep: build install
+@@ -49,29 +61,22 @@
+ 
+ # Build architecture-dependent files here.
+ binary-arch: build install
+-#	dh_testversion
+ 	dh_testdir
+ 	dh_testroot
+ 	dh_installdocs
+-	dh_installexamples
+ 	dh_installmenu
+-#	dh_installemacsen
+-#	dh_installinit
+-	dh_installcron
+-#	dh_installmanpages
+-#	dh_undocumented
+ 	dh_installchangelogs ChangeLog
++	dh_lintian
+ 	dh_strip
+ 	dh_compress
+ 	dh_fixperms
+ 	dh_installdeb
+ 	dh_shlibdeps
+ 	dh_gencontrol
+-#	dh_makeshlibs
+ 	dh_md5sums
+ 	dh_builddeb
+ 
+-source diff:                                                                  
++source diff:
+ 	@echo >&2 'source and diff are obsolete - use dpkg-source -b'; false
+ 
+ binary: binary-indep binary-arch
+--- netkit-telnet-ssl-0.17.24+0.1.orig/debian/telnetd.dirs
++++ netkit-telnet-ssl-0.17.24+0.1/debian/telnetd.dirs
+@@ -2,3 +2,4 @@
+ usr/share/man/man5
+ usr/share/man/man8
+ usr/sbin
++/etc/telnetd-ssl
 --- netkit-telnet-ssl-0.17.24+0.1.orig/debian/telnetd.postinst
 +++ netkit-telnet-ssl-0.17.24+0.1/debian/telnetd.postinst
-@@ -1,32 +1,58 @@
- #!/bin/sh -e
+@@ -1,32 +1,63 @@
+-#!/bin/sh -e
 -# $Id$
-+# $Id$
++#!/bin/sh
++
++set -e
  
  update_inetd_entry() {
 -	if [ $2 ]; then
 -		update-inetd --remove "$rootent"
 -		update-inetd --group STANDARD --add "$telnetdent"
 +	if [ "$2" = "yes" ]; then
-+		update-inetd --remove ".*/usr/sbin/in.telnetd"
-+		update-inetd --group STANDARD --add "$telnetdsslent"
++		entry="$telnetdsslent"
  	else
 -		update-inetd --remove "$telnetdent"
-+		update-inetd --remove ".*/usr/sbin/in.telnetd"
- 		update-inetd --group STANDARD --add "$rootent"
+-		update-inetd --group STANDARD --add "$rootent"
++		entry="$rootent"
++	fi
++	args="`grep '^#<off>#.*/usr/sbin/in.telnetd' /etc/inetd.conf|sed 's/.*\/usr\/sbin\/in.telnetd\(.*\)/\1/'`"
++	if [ -n "$args" ]; then
++		entry="$entry$args"
  	fi
++	update-inetd --remove ".*telnet"
++	update-inetd --group STANDARD --add "$entry"
  }
  
 -if ! id -u telnetd >/dev/null 2>&1; then
@@ -2380,12 +2891,13 @@
  fi
  
  rootent="telnet		stream	tcp	nowait	root	/usr/sbin/tcpd	/usr/sbin/in.telnetd"
- telnetdent="telnet		stream	tcp	nowait	telnetd.telnetd	/usr/sbin/tcpd	/usr/sbin/in.telnetd"
-+telnetdsslent="telnet		stream	tcp	nowait	telnetd-ssl.telnetd-ssl	/usr/sbin/tcpd	/usr/sbin/in.telnetd"
+-telnetdent="telnet		stream	tcp	nowait	telnetd.telnetd	/usr/sbin/tcpd	/usr/sbin/in.telnetd"
++#telnetdent="telnet		stream	tcp	nowait	telnetd.telnetd	/usr/sbin/tcpd	/usr/sbin/in.telnetd"
++telnetdsslent="telnet		stream	tcp	nowait	telnetd-ssl	/usr/sbin/tcpd	/usr/sbin/in.telnetd"
  
  if egrep -q "^(devpts /dev/pts|devfs /dev) " /proc/mounts; then
  	devpts=yes
-@@ -36,13 +62,17 @@
+@@ -36,13 +67,20 @@
  
  case "$1" in
  abort-upgrade | abort-deconfigure | abort-remove)
@@ -2396,46 +2908,53 @@
  	;;
  configure)
 -	if [ -z "$2" ] || dpkg --compare-versions "$2" lt 0.17-13; then
--		update_inetd_entry "$2" $devpts
--	else
--		update-inetd --enable telnet
 +	if test -x /usr/sbin/update-inetd ; then
-+		if [ -z "$2" ] || dpkg --compare-versions "$2" lt 0.17.24+0.1-9; then
-+			update_inetd_entry "$2" $devpts
-+		else
-+			update-inetd --enable telnet
-+		fi
++            if [ -z "$2" ] ||
++		dpkg --compare-versions "$2" lt 0.17.24+0.1-14 ||
++		grep -q '	telnetd	' /etc/inetd.conf
++            then
+ 		update_inetd_entry "$2" $devpts
+-	else
++            else
+ 		update-inetd --enable telnet
++	    fi
  	fi
  	;;
  *)
-@@ -51,4 +81,29 @@
+@@ -51,4 +89,35 @@
  	;;
  esac
  
-+cd /etc/ssl/certs
 +PATH=$PATH:/usr/bin/ssl
-+if [ -f telnetd.pem ]
++if [ -f /etc/ssl/certs/telnetd.pem ]
 +then
-+    echo "You already have /etc/ssl/certs/telnetd.pem"
++	echo "Moving telnetd.pem to /etc/telnetd-ssl"
++	mv /etc/ssl/certs/telnetd.pem /etc/telnetd-ssl
++	# remove old cert hash - don't care if it fails
++	rm -f `openssl x509 -noout -hash < /etc/telnetd-ssl/telnetd.pem`.0 || true
++elif [ -f /etc/telnetd-ssl/telnetd.pem ]
++then
++    echo "You already have /etc/telnetd-ssl/telnetd.pem"
 +else
-+    HOSTNAME=`hostname -s`
++	cd /etc/telnetd-ssl
++    HSTNAME=`hostname -s`
 +    DOMAINNAME=`hostname -d`
-+    openssl req -new -x509 -nodes -out telnetd.pem -keyout telnetd.pem > /dev/null 2>&1 <<+
++    openssl req -config /etc/telnetd-ssl/openssl.cnf  -new -x509 -nodes -out telnetd.pem -keyout telnetd.pem > /dev/null 2>&1 <<+
 +.
 +.
 +.
 +$DOMAINNAME
-+$HOSTNAME
-+telnetd
-+root@$HOSTNAME.$DOMAINNAME
++$HSTNAME telnetd
++$HSTNAME.$DOMAINNAME
++root@$HSTNAME.$DOMAINNAME
 ++
 +#    req -new -x509 -nodes -out telnetd.pem -keyout telnetd.pem
-+    ln -sf telnetd.pem `openssl x509 -noout -hash < telnetd.pem`.0
++#    ln -sf telnetd.pem `openssl x509 -noout -hash < telnetd.pem`.0
 +#    chmod 644 telnetd.pem
 +fi
 +
-+chown root:telnetd-ssl /etc/ssl/certs/telnetd.pem
-+chmod 0640 /etc/ssl/certs/telnetd.pem
++chown root:telnetd-ssl /etc/telnetd-ssl/telnetd.pem
++chmod 0640 /etc/telnetd-ssl/telnetd.pem
 +
  #DEBHELPER#
 --- netkit-telnet-ssl-0.17.24+0.1.orig/debian/telnetd.postrm
@@ -2485,28 +3004,32 @@
  	err=$?
  	set -e
  	case $err in
-@@ -37,9 +50,13 @@
+@@ -36,10 +49,14 @@
+ 	esac
  	;;
  purge)
- 	# If netbase is not installed, then we don't need to do the remove.
+-	# If netbase is not installed, then we don't need to do the remove.
 -	if command -v update-inetd >/dev/null 2>&1; then
 -		update-inetd --remove "telnet	.*	/usr/sbin/in.telnetd"
-+	if test -x /usr/sbin/update-inetd ; then
-+		update-inetd --remove ".*/usr/sbin/in.telnetd"
++	# If update-inetd is not installed, then we don't need to do the remove.
++	if test -x /usr/sbin/update-inetd;  then
++		update-inetd --remove "#<off># telnet"
  	fi
-+	cd /etc/ssl/certs
++	cd /etc/telnetd-ssl
 +	PATH=$PATH:/usr/bin/ssl
-+	rm -f `openssl x509 -noout -hash < telnetd.pem`.0
++#	rm -f `openssl x509 -noout -hash < telnetd.pem`.0
 +	rm -f telnetd.pem
  	;;
  *)
  	echo "$0: incorrect arguments: $*" >&2
 --- netkit-telnet-ssl-0.17.24+0.1.orig/debian/telnetd.prerm
 +++ netkit-telnet-ssl-0.17.24+0.1/debian/telnetd.prerm
-@@ -1,6 +1,9 @@
- #!/bin/sh -e
+@@ -1,6 +1,10 @@
+-#!/bin/sh -e
 -# $Id$
-+# $Id$
++#!/bin/sh
++
++set -e
 +
 +if test -x /usr/sbin/update-inetd ; then
 +	update-inetd --disable telnet
@@ -2515,44 +3038,413 @@
 -update-inetd --disable telnet
  
  #DEBHELPER#
---- netkit-telnet-ssl-0.17.24+0.1.orig/debian/NEWS
-+++ netkit-telnet-ssl-0.17.24+0.1/debian/NEWS
-@@ -0,0 +1,27 @@
-+			     netkit-telnet-ssl
-+			     -----------------
-+
-+Autologin
-+---------
-+  
-+  For compatablility with vanilla telnet, and by popular demand, autologin
-+  is no longer on by default in telnet-ssl.
-+
-+  Autologin is enabled if any of the following command-line arguments are used:
-+
-+  * -a 
-+  * -l username 
-+  * -r (rlogin mode) 
-+  * -z cert=cert.pem
-+  * -z key=key.pem
-+
-+Certificate-based authentication
-+--------------------------------
-+    
-+  SSL telnetd now supports -z certsok and /etc/ssl.users for certificate-based
-+  authentication without a password. As a consequence of this, telnetlogin(8)
-+  now accepts -f for login without a password. See telnetd(8) for more
-+  information.
-+  
-+ -- Ian Beckwith <ianb@nessie.mcc.ac.uk>  Sun,  5 Dec 2004 12:57:09 +0000
-+
 --- netkit-telnet-ssl-0.17.24+0.1.orig/debian/compat
 +++ netkit-telnet-ssl-0.17.24+0.1/debian/compat
 @@ -0,0 +1 @@
-+4
++5
+--- netkit-telnet-ssl-0.17.24+0.1.orig/debian/telnet-ssl.lintian-overrides
++++ netkit-telnet-ssl-0.17.24+0.1/debian/telnet-ssl.lintian-overrides
+@@ -0,0 +1,5 @@
++# netkit is long dead upstream
++telnet-ssl: no-homepage-field
++# dont is valid as part of telnet IAC DONT.. commands
++telnet-ssl: spelling-error-in-binary ./usr/bin/telnet-ssl dont don't
++
+--- netkit-telnet-ssl-0.17.24+0.1.orig/debian/telnetd-ssl.lintian-overrides
++++ netkit-telnet-ssl-0.17.24+0.1/debian/telnetd-ssl.lintian-overrides
+@@ -0,0 +1,5 @@
++# netkit is long dead upstream
++telnetd-ssl: no-homepage-field
++# dont is valid as part of telnet IAC DONT.. commands
++telnetd-ssl: spelling-error-in-binary ./usr/sbin/in.telnetd dont don't
++
+--- netkit-telnet-ssl-0.17.24+0.1.orig/debian/openssl.cnf
++++ netkit-telnet-ssl-0.17.24+0.1/debian/openssl.cnf
+@@ -0,0 +1,313 @@
++#
++# OpenSSL example configuration file.
++# This is mostly being used for generation of certificate requests.
++#
++
++# This definition stops the following lines choking if HOME isn't
++# defined.
++HOME			= .
++RANDFILE		= $ENV::HOME/.rnd
++
++# Extra OBJECT IDENTIFIER info:
++#oid_file		= $ENV::HOME/.oid
++oid_section		= new_oids
++
++# To use this configuration file with the "-extfile" option of the
++# "openssl x509" utility, name here the section containing the
++# X.509v3 extensions to use:
++# extensions		= 
++# (Alternatively, use a configuration file that has only
++# X.509v3 extensions in its main [= default] section.)
++
++[ new_oids ]
++
++# We can add new OIDs in here for use by 'ca' and 'req'.
++# Add a simple OID like this:
++# testoid1=1.2.3.4
++# Or use config file substitution like this:
++# testoid2=${testoid1}.5.6
++
++####################################################################
++[ ca ]
++default_ca	= CA_default		# The default ca section
++
++####################################################################
++[ CA_default ]
++
++dir		= ./demoCA		# Where everything is kept
++certs		= $dir/certs		# Where the issued certs are kept
++crl_dir		= $dir/crl		# Where the issued crl are kept
++database	= $dir/index.txt	# database index file.
++#unique_subject	= no			# Set to 'no' to allow creation of
++					# several ctificates with same subject.
++new_certs_dir	= $dir/newcerts		# default place for new certs.
++
++certificate	= $dir/cacert.pem 	# The CA certificate
++serial		= $dir/serial 		# The current serial number
++crlnumber	= $dir/crlnumber	# the current crl number
++					# must be commented out to leave a V1 CRL
++crl		= $dir/crl.pem 		# The current CRL
++private_key	= $dir/private/cakey.pem# The private key
++RANDFILE	= $dir/private/.rand	# private random number file
++
++x509_extensions	= usr_cert		# The extentions to add to the cert
++
++# Comment out the following two lines for the "traditional"
++# (and highly broken) format.
++name_opt 	= ca_default		# Subject Name options
++cert_opt 	= ca_default		# Certificate field options
++
++# Extension copying option: use with caution.
++# copy_extensions = copy
++
++# Extensions to add to a CRL. Note: Netscape communicator chokes on V2 CRLs
++# so this is commented out by default to leave a V1 CRL.
++# crlnumber must also be commented out to leave a V1 CRL.
++# crl_extensions	= crl_ext
++
++default_days	= 365			# how long to certify for
++default_crl_days= 30			# how long before next CRL
++default_md	= sha1			# which md to use.
++preserve	= no			# keep passed DN ordering
++
++# A few difference way of specifying how similar the request should look
++# For type CA, the listed attributes must be the same, and the optional
++# and supplied fields are just that :-)
++policy		= policy_match
++
++# For the CA policy
++[ policy_match ]
++countryName		= match
++stateOrProvinceName	= match
++organizationName	= match
++organizationalUnitName	= optional
++commonName		= supplied
++emailAddress		= optional
++
++# For the 'anything' policy
++# At this point in time, you must list all acceptable 'object'
++# types.
++[ policy_anything ]
++countryName		= optional
++stateOrProvinceName	= optional
++localityName		= optional
++organizationName	= optional
++organizationalUnitName	= optional
++commonName		= supplied
++emailAddress		= optional
++
++####################################################################
++[ req ]
++default_bits		= 1024
++default_keyfile 	= privkey.pem
++distinguished_name	= req_distinguished_name
++attributes		= req_attributes
++x509_extensions	= v3_ca	# The extentions to add to the self signed cert
++
++# Passwords for private keys if not present they will be prompted for
++# input_password = secret
++# output_password = secret
++
++# This sets a mask for permitted string types. There are several options. 
++# default: PrintableString, T61String, BMPString.
++# pkix	 : PrintableString, BMPString.
++# utf8only: only UTF8Strings.
++# nombstr : PrintableString, T61String (no BMPStrings or UTF8Strings).
++# MASK:XXXX a literal mask value.
++# WARNING: current versions of Netscape crash on BMPStrings or UTF8Strings
++# so use this option with caution!
++string_mask = nombstr
++
++# req_extensions = v3_req # The extensions to add to a certificate request
++
++[ req_distinguished_name ]
++countryName			= Country Name (2 letter code)
++countryName_default		= AU
++countryName_min			= 2
++countryName_max			= 2
++
++stateOrProvinceName		= State or Province Name (full name)
++stateOrProvinceName_default	= Some-State
++
++localityName			= Locality Name (eg, city)
++
++0.organizationName		= Organization Name (eg, company)
++0.organizationName_default	= Internet Widgits Pty Ltd
++
++# we can do this but it is not needed normally :-)
++#1.organizationName		= Second Organization Name (eg, company)
++#1.organizationName_default	= World Wide Web Pty Ltd
++
++organizationalUnitName		= Organizational Unit Name (eg, section)
++#organizationalUnitName_default	=
++
++commonName			= Common Name (eg, YOUR name)
++commonName_max			= 64
++
++emailAddress			= Email Address
++emailAddress_max		= 64
++
++# SET-ex3			= SET extension number 3
++
++[ req_attributes ]
++challengePassword		= A challenge password
++challengePassword_min		= 4
++challengePassword_max		= 20
++
++unstructuredName		= An optional company name
++
++[ usr_cert ]
++
++# These extensions are added when 'ca' signs a request.
++
++# This goes against PKIX guidelines but some CAs do it and some software
++# requires this to avoid interpreting an end user certificate as a CA.
++
++basicConstraints=CA:FALSE
++
++# Here are some examples of the usage of nsCertType. If it is omitted
++# the certificate can be used for anything *except* object signing.
++
++# This is OK for an SSL server.
++# nsCertType			= server
++
++# For an object signing certificate this would be used.
++# nsCertType = objsign
++
++# For normal client use this is typical
++# nsCertType = client, email
++
++# and for everything including object signing:
++# nsCertType = client, email, objsign
++
++# This is typical in keyUsage for a client certificate.
++# keyUsage = nonRepudiation, digitalSignature, keyEncipherment
++
++# This will be displayed in Netscape's comment listbox.
++nsComment			= "OpenSSL Generated Certificate"
++
++# PKIX recommendations harmless if included in all certificates.
++subjectKeyIdentifier=hash
++authorityKeyIdentifier=keyid,issuer
++
++# This stuff is for subjectAltName and issuerAltname.
++# Import the email address.
++# subjectAltName=email:copy
++# An alternative to produce certificates that aren't
++# deprecated according to PKIX.
++# subjectAltName=email:move
++
++# Copy subject details
++# issuerAltName=issuer:copy
++
++#nsCaRevocationUrl		= http://www.domain.dom/ca-crl.pem
++#nsBaseUrl
++#nsRevocationUrl
++#nsRenewalUrl
++#nsCaPolicyUrl
++#nsSslServerName
++
++[ v3_req ]
++
++# Extensions to add to a certificate request
++
++basicConstraints = CA:FALSE
++keyUsage = nonRepudiation, digitalSignature, keyEncipherment
++
++[ v3_ca ]
++
++
++# Extensions for a typical CA
++
++
++# PKIX recommendation.
++
++subjectKeyIdentifier=hash
++
++authorityKeyIdentifier=keyid:always,issuer:always
++
++# This is what PKIX recommends but some broken software chokes on critical
++# extensions.
++#basicConstraints = critical,CA:true
++# So we do this instead.
++basicConstraints = CA:true
++
++# Key usage: this is typical for a CA certificate. However since it will
++# prevent it being used as an test self-signed certificate it is best
++# left out by default.
++# keyUsage = cRLSign, keyCertSign
++
++# Some might want this also
++# nsCertType = sslCA, emailCA
++
++# Include email address in subject alt name: another PKIX recommendation
++# subjectAltName=email:copy
++# Copy issuer details
++# issuerAltName=issuer:copy
++
++# DER hex encoding of an extension: beware experts only!
++# obj=DER:02:03
++# Where 'obj' is a standard or added object
++# You can even override a supported extension:
++# basicConstraints= critical, DER:30:03:01:01:FF
++
++[ crl_ext ]
++
++# CRL extensions.
++# Only issuerAltName and authorityKeyIdentifier make any sense in a CRL.
++
++# issuerAltName=issuer:copy
++authorityKeyIdentifier=keyid:always,issuer:always
++
++[ proxy_cert_ext ]
++# These extensions should be added when creating a proxy certificate
++
++# This goes against PKIX guidelines but some CAs do it and some software
++# requires this to avoid interpreting an end user certificate as a CA.
++
++basicConstraints=CA:FALSE
++
++# Here are some examples of the usage of nsCertType. If it is omitted
++# the certificate can be used for anything *except* object signing.
++
++# This is OK for an SSL server.
++# nsCertType			= server
++
++# For an object signing certificate this would be used.
++# nsCertType = objsign
++
++# For normal client use this is typical
++# nsCertType = client, email
++
++# and for everything including object signing:
++# nsCertType = client, email, objsign
++
++# This is typical in keyUsage for a client certificate.
++# keyUsage = nonRepudiation, digitalSignature, keyEncipherment
++
++# This will be displayed in Netscape's comment listbox.
++nsComment			= "OpenSSL Generated Certificate"
++
++# PKIX recommendations harmless if included in all certificates.
++subjectKeyIdentifier=hash
++authorityKeyIdentifier=keyid,issuer:always
++
++# This stuff is for subjectAltName and issuerAltname.
++# Import the email address.
++# subjectAltName=email:copy
++# An alternative to produce certificates that aren't
++# deprecated according to PKIX.
++# subjectAltName=email:move
++
++# Copy subject details
++# issuerAltName=issuer:copy
++
++#nsCaRevocationUrl		= http://www.domain.dom/ca-crl.pem
++#nsBaseUrl
++#nsRevocationUrl
++#nsRenewalUrl
++#nsCaPolicyUrl
++#nsSslServerName
++
++# This really needs to be in place for it to be a proxy certificate.
++proxyCertInfo=critical,language:id-ppl-anyLanguage,pathlen:3,policy:foo
+--- netkit-telnet-ssl-0.17.24+0.1.orig/debian/telnetd-ssl.preinst
++++ netkit-telnet-ssl-0.17.24+0.1/debian/telnetd-ssl.preinst
+@@ -0,0 +1,12 @@
++#!/bin/sh
++
++set -e
++
++dpkg-divert --quiet --package ssltelnet --remove --rename \
++                --divert /usr/sbin/in.telnetd.nossl /usr/sbin/in.telnetd
++dpkg-divert --quiet --package ssltelnet --remove --rename \
++                --divert /usr/man/man8/telnetd.nossl.8.gz /usr/man/man8/telnetd.8.gz
++dpkg-divert --quiet --package ssltelnet --remove --rename \
++                --divert /usr/man/man8/in.telnetd.nossl.8.gz /usr/man/man8/in.telnetd.8.gz
++
++#DEBHELPER#
+--- netkit-telnet-ssl-0.17.24+0.1.orig/debian/watch
++++ netkit-telnet-ssl-0.17.24+0.1/debian/watch
+@@ -0,0 +1,2 @@
++# Nothing to watch - netkit upstream has been dead for years.
++# and the SSL patch is unmaintained upstream too.
+--- netkit-telnet-ssl-0.17.24+0.1.orig/debian/NEWS
++++ netkit-telnet-ssl-0.17.24+0.1/debian/NEWS
+@@ -0,0 +1,42 @@
++netkit-telnet-ssl (0.17.24+0.1-21) unstable; urgency=low
++
++  * SSL keys/certificates generated since 2006-09-17 with Debian's openssl
++    package are vulnerable due to a predictable random number generator.
++    For more details see:
++
++      http://www.debian.org/security/2008/dsa-1571
++      http://www.debian.org/security/key-rollover/
++      http://wiki.debian.org/SSLkeys
++
++  * To generate new keys using the default telnetd-ssl setup (as root):
++
++      rm -f /etc/telnetd-ssl/telnetd.pem /etc/ssl/certs/telnetd.pem
++      dpkg-reconfigure telnetd-ssl
++
++  * If you have set up any SSL infrastructure beyond this, it will
++    also need to be regenerated.
++
++ -- Ian Beckwith <ianb@erislabs.net>  Mon, 26 May 2008 00:37:58 +0100
++
++netkit-telnet-ssl (0.17.24+0.1-5) unstable; urgency=low
++
++  * Autologin
++    For compatability with vanilla telnet, and by popular demand, autologin
++    is no longer on by default in telnet-ssl.
++
++    Autologin is enabled if any of the following command-line arguments are used:
++
++    * -a 
++    * -l username 
++    * -r (rlogin mode) 
++    * -z cert=cert.pem
++    * -z key=key.pem
++
++  * Certificate-based authentication
++    SSL telnetd now supports -z certsok and /etc/ssl.users for
++    certificate-based authentication without a password. As a consequence
++    of this, telnetlogin(8) now accepts -f for login without a
++    password. See telnetd(8) for more information.
++
++ -- Ian Beckwith <ianb@nessie.mcc.ac.uk>  Sun,  5 Dec 2004 12:57:09 +0000
++
 --- netkit-telnet-ssl-0.17.24+0.1.orig/debian/preinst
 +++ netkit-telnet-ssl-0.17.24+0.1/debian/preinst
-@@ -0,0 +1,8 @@
-+#!/bin/sh -e
+@@ -0,0 +1,10 @@
++#!/bin/sh
++
++set -e
 +
 +dpkg-divert --quiet --package ssltelnet --remove --rename \
 +                --divert /usr/bin/telnet.nossl /usr/bin/telnet
@@ -2577,21 +3469,17 @@
 +                --divert /usr/man/man8/in.telnetd.nossl.8.gz /usr/man/man8/in.telnetd.8.gz
 +
 +#DEBHELPER#
---- netkit-telnet-ssl-0.17.24+0.1.orig/debian/telnetd-ssl.preinst
-+++ netkit-telnet-ssl-0.17.24+0.1/debian/telnetd-ssl.preinst
-@@ -0,0 +1,10 @@
-+#!/bin/sh -e
-+
-+dpkg-divert --quiet --package ssltelnet --remove --rename \
-+                --divert /usr/sbin/in.telnetd.nossl /usr/sbin/in.telnetd
-+dpkg-divert --quiet --package ssltelnet --remove --rename \
-+                --divert /usr/man/man8/telnetd.nossl.8.gz /usr/man/man8/telnetd.8.gz
-+dpkg-divert --quiet --package ssltelnet --remove --rename \
-+                --divert /usr/man/man8/in.telnetd.nossl.8.gz /usr/man/man8/in.telnetd.8.gz
-+
-+#DEBHELPER#
 --- netkit-telnet-ssl-0.17.24+0.1.orig/libtelnet/auth-proto.h
 +++ netkit-telnet-ssl-0.17.24+0.1/libtelnet/auth-proto.h
+@@ -68,7 +68,7 @@
+ #if	defined(AUTHENTICATE)
+ Authenticator *findauthenticator P((int, int));
+ 
+-void auth_init P((char *, int));
++void auth_init P((const char *, int));
+ int auth_cmd P((int, char **));
+ void auth_request P((void));
+ void auth_send P((unsigned char *, int));
 @@ -123,7 +123,9 @@
  int auth_ssl_status P((Authenticator *, char *, int));
  void auth_ssl_printsub P((unsigned char *, int, unsigned char *, int));
@@ -2615,7 +3503,7 @@
  static char sccsid[] = "@(#)auth.c	5.2 (Berkeley) 3/22/91";
  #endif /* not lint */
  
-@@ -83,6 +86,9 @@
+@@ -83,8 +86,11 @@
  
  #define	typemask(x)		(1<<((x)-1))
  
@@ -2623,8 +3511,20 @@
 +
 +
  int auth_debug_mode = 0;
- static 	char	*Name = "Noname";
+-static 	char	*Name = "Noname";
++static 	const char *Name = "Noname";
  static	int	Server = 0;
+ static	Authenticator	*authenticated = 0;
+ static	int	authenticating = 0;
+@@ -170,7 +176,7 @@
+ 
+ 	void
+ auth_init(name, server)
+-	char *name;
++	const char *name;
+ 	int server;
+ {
+ 	Authenticator *ap = authenticators;
 @@ -241,7 +247,7 @@
  
  	int
@@ -2707,6 +3607,17 @@
  	static void
  auth_intr(sig)
  	int sig;
+--- netkit-telnet-ssl-0.17.24+0.1.orig/libtelnet/misc-proto.h
++++ netkit-telnet-ssl-0.17.24+0.1/libtelnet/misc-proto.h
+@@ -68,7 +68,7 @@
+ extern "C" {
+ #endif
+ 
+-void auth_encrypt_init P((char *, char *, char *, int));
++void auth_encrypt_init P((char *, char *, const char *, int));
+ void auth_encrypt_connect P((int));
+ void auth_encrypt_user P((const char *name));
+ void printd P((unsigned char *, int));
 --- netkit-telnet-ssl-0.17.24+0.1.orig/libtelnet/misc.c
 +++ netkit-telnet-ssl-0.17.24+0.1/libtelnet/misc.c
 @@ -32,6 +32,9 @@
@@ -2732,6 +3643,15 @@
  
  char *RemoteHostName;
  char *LocalHostName;
+@@ -65,7 +73,7 @@
+ auth_encrypt_init(local, remote, name, server)
+ 	char *local;
+ 	char *remote;
+-	char *name;
++	const char *name;
+ 	int server;
+ {
+ 	RemoteHostName = remote;
 --- netkit-telnet-ssl-0.17.24+0.1.orig/libtelnet/ssl.c
 +++ netkit-telnet-ssl-0.17.24+0.1/libtelnet/ssl.c
 @@ -47,6 +47,9 @@
