@@ -2,7 +2,7 @@ Summary:	Client for the telnet remote login protocol with support for SSL
 Summary(pl.UTF-8):	Klient protokołu telnet ze wsparciem dla SSL
 Name:		telnet-ssl
 Version:	0.17.24
-Release:	0.1
+Release:	1
 License:	GPL
 Group:		Networking
 # based on debian (netkit-)telnet-ssl package
