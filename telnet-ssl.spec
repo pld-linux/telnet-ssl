@@ -1,6 +1,5 @@
 # TODO:
 # - telnetd:
-#   - fix path to telnetlogin
 #   - fix (or maybe not?) path to SSL certs
 #   - provide inetd entry for both telnet and telnets ?
 Summary:	Client for the telnet remote login protocol with support for SSL
@@ -10,7 +9,7 @@ Version:	0.17.24
 Release:	0.1
 License:	GPL
 Group:		Networking
-# based on debian telnet-ssl package
+# based on debian (netkit-)telnet-ssl package
 Source0:	%{name}-%{version}.tar.gz
 # Source0-md5:	43a402139ed6b86434fdb83256feaad8
 Source1:	telnetd-ssl.inetd
@@ -101,9 +100,11 @@ Ten pakiet dostarcza serwer telnet-ssl.
 %patch0 -p1
 %patch1 -p1
 
+sed -i -e "s|/usr/lib/telnetlogin|%{_sbindir}/telnetlogin|" telnetd/Makefile
+
 %build
-CFLAGS="%{rpmcflags} -D_GNU_SOURCE -DLOGIN_WRAPPER=\"/usr/bin/telnetlogin\""
-CXXFLAGS="%{rpmcflags} -D_GNU_SOURCE -DLOGIN_WRAPPER=\"/usr/bin/telnetlogin\""
+CFLAGS="%{rpmcflags} -D_GNU_SOURCE"
+CXXFLAGS="%{rpmcflags} -D_GNU_SOURCE"
 export CFLAGS CXXFLAGS
 ./configure \
 	--prefix=%{_prefix} \
