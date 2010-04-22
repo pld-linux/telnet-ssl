@@ -3,6 +3,8 @@ SOCK_TYPE=stream
 PROTOCOL=tcp
 PORT=23
 FLAGS=nowait
-USER=root
+USER=nobody
+GROUP=adm
 SERVER=tcpd
 DAEMON=/usr/sbin/in.telnetd
+#DAEMONARGS="-z ssl -z cert=/etc/certs/telnetd.pem -z key=/etc/certs/telnetd.key"

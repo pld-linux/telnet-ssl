@@ -1,7 +1,3 @@
-# TODO:
-# - telnetd:
-#   - fix (or maybe not?) path to SSL certs
-#   - provide inetd entry for both telnet and telnets ?
 Summary:	Client for the telnet remote login protocol with support for SSL
 Summary(pl.UTF-8):	Klient protokołu telnet ze wsparciem dla SSL
 Name:		telnet-ssl
@@ -146,5 +142,5 @@ fi
 %defattr(644,root,root,755)
 %attr(640,root,root) %config(noreplace) %verify(not md5 mtime size) /etc/sysconfig/rc-inetd/telnetd
 %attr(755,root,root) %{_sbindir}/in.telnetd
-%attr(755,root,root) %{_sbindir}/telnetlogin
+%attr(4750,root,adm) %{_sbindir}/telnetlogin
 %{_mandir}/man8/*
