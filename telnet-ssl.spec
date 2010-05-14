@@ -13,6 +13,8 @@ Patch0:		%{name}-debian.patch
 Patch1:		%{name}-install.patch
 # better url?
 URL:		http://packages.debian.org/telnet-ssl
+BuildRequires:	libstdc++-devel
+BuildRequires:	ncurses-devel
 BuildRequires:	openssl-devel
 BuildRequires:	rpmbuild(macros) >= 1.268
 BuildRoot:	%{tmpdir}/%{name}-%{version}-root-%(id -u -n)
